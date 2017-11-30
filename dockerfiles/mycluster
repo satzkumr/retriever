@@ -1,0 +1,6 @@
+FORM centos
+RUN yum install git -y
+RUN rm -rf /tmp/setup
+RUN mkdir /tmp/setup
+WORKDIR /tmp/setup
+RUN git clone http://github.com/satzkumr/MapRRepoFiles.git

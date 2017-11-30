@@ -21,11 +21,11 @@ NODE_HOSTS="myhost.cluster.com"
 
 #Number of CLDB nodes
 
-NO_OF_CLDBS=2
+NO_OF_CLDBS=1
 
 #Number of Zookeepers
 
-NO_OF_ZKS=3
+NO_OF_ZKS=0
 
 #Number of resourcemanagers
 

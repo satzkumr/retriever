@@ -25,11 +25,11 @@ NO_OF_CLDBS=1
 
 #Number of Zookeepers
 
-NO_OF_ZKS=0
+NO_OF_ZKS=3
 
 #Number of resourcemanagers
 
-NO_OF_RMS=1
+NO_OF_RMS=2
 
 #Other components
 

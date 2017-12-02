@@ -13,3 +13,5 @@ RUN cp /tmp/setup/MapRRepoFiles/5.1/* /etc/yum.repos.d/
 RUN yum install mapr-core mapr-fileserver
 RUN yum install mapr-cldb -y
 RUN yum install mapr-zookeeper -y
+RUN yum install mapr-resourcemanager -y
+RUN yum install mapr-nodemanager -y

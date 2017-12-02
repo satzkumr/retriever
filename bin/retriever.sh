@@ -55,7 +55,59 @@ create_base_dockerfile()
 	echo "WORKDIR /tmp/setup/MapRRepoFiles" >> $outfile
 	echo "RUN find . -type d ! -name "$1" | xargs rm -rf " >> $outfile
 	echo "RUN cp /tmp/setup/MapRRepoFiles/$1/* /etc/yum.repos.d/" >> $outfile
-	echo "RUN yum install mapr-core mapr-fileserver mapr-nodemanager" >> $outfile
+	echo "RUN yum install mapr-core mapr-fileserver" >> $outfile
+}
+
+
+#Actual logic where it assigns the roles to cluster
+#Arguments: cluster roles
+
+add_cluster_roles()
+{
+
+	mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
+	cp $outfile $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
+	i=1;
+	while [ $i -le $NODE_COUNT ];
+	do
+		echo "Building template for ..Node: ${hosts[$i]}"
+		cp $outfile $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/${hosts[$i]}
+		clustertempdir=$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
+		i=$((i+1))
+	done;
+
+		# Adding CLDB Roles to cluster template
+		for (( i=1; i<=$NO_OF_CLDBS; i++ ))
+		do
+	 		#Adding CLDB role to node
+			echo "Adding CLDB Role to Host: ${hosts[$i]}"
+			echo "RUN yum install mapr-cldb -y" >> $clustertempdir/${hosts[$i]}			
+		done;
+	
+		#Adding Zookeeper role to cluster nodes
+
+		for (( i=1; i<=$NO_OF_ZKS; i++))
+                do
+                        #Adding Zookeeper role to nodes
+                        echo "Adding Zookeeper Role to Host: ${hosts[$i]}"
+                        echo "RUN yum install mapr-zookeeper -y" >> $clustertempdir/${hosts[$i]}
+                done;
+		
+		#Adding Resourcemanager role to cluster nodes
+		for (( i=1; i<=$NO_OF_RMS; i++))
+                do
+                        #Adding Resourcemanager role to nodes
+                        echo "Adding Resource Manager Role to Host: ${hosts[$i]}"
+                        echo "RUN yum install mapr-resourcemanager -y" >> $clustertempdir/${hosts[$i]}
+                done;
+		
+		#Adding Nodemanager role to cluster nodes, By default all the nodes installed with NM Role
+                for (( i=1; i<=$NODE_COUNT; i++))
+                do
+                        #Adding Nodemanager role to nodes
+                        echo "Adding Node Manager Role to Host: ${hosts[$i]}"
+                        echo "RUN yum install mapr-nodemanager -y" >> $clustertempdir/${hosts[$i]}
+                done;
 }
 
 
@@ -91,7 +143,7 @@ build_docker_file()
 		exit 1;
 	fi
 
-#	create_mapr_dockerfile
+	add_cluster_roles $NODE_COMPONENTS
 }
 
 

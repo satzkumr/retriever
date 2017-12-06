@@ -12,6 +12,8 @@ Step 1:
 		iii) zookeeper, CLDB 
 		iv) Resourcemanager, node manager
 		v) Drillbits
+
+
 Step 2:
 	
 	Run the retriever script under bin directory, Hang on !! this guy may be lazy some times :)

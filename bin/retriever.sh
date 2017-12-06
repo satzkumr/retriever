@@ -6,7 +6,7 @@
 #
 #######################################################################
 
-RETRIEVER_HOME=/home/mapr/myProjects/retriever
+RETRIEVER_HOME=/home/mapr/myProjects/retriever/
 
 #sourcing input file
 
@@ -48,7 +48,7 @@ create_base_dockerfile()
 {
 
 	#this will empty the file if any with the same cluster name
-	echo "FORM $FROM_SRC" > $outfile
+	echo "FROM $FROM_SRC" > $outfile
 	echo "RUN yum install git -y" >> $outfile
 	echo "RUN rm -rf /tmp/setup" >> $outfile
 	echo "RUN mkdir /tmp/setup" >> $outfile
@@ -58,9 +58,9 @@ create_base_dockerfile()
 	echo "RUN yum install java-1.7.0-openjdk.x86_64 -y " >>$outfile
 	echo "RUN yum install *jdk-devel* -y" >> $outfile
 	echo "WORKDIR /tmp/setup/MapRRepoFiles" >> $outfile
-	echo "RUN find . -type d ! -name "$1" | xargs rm -rf " >> $outfile
+	#echo "RUN find . -type d ! -name "$1" | xargs rm -rf " >> $outfile
 	echo "RUN cp /tmp/setup/MapRRepoFiles/$1/* /etc/yum.repos.d/" >> $outfile
-	echo "RUN yum install mapr-core mapr-fileserver" >> $outfile
+	echo "RUN yum install mapr-core mapr-fileserver -y" >> $outfile
 	echo "Creating Base docker file............................[DONE]"
 }
 
@@ -71,6 +71,7 @@ create_base_dockerfile()
 add_cluster_roles()
 {
 
+	rm -rf $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	cp $outfile $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	echo "Building template for nodes.."
@@ -139,7 +140,7 @@ add_cluster_roles()
 			then
 				for (( i=1; i<$NO_OF_DRILL;i++))
 				do
-				echo "RUN yum install mapr-drillbits -y" >> $clustertempdir/${hosts[$i]}
+				echo "RUN yum install mapr-drillbits -y"
 				done;
 			fi
 		done;
@@ -158,9 +159,14 @@ execute_docker_files()
 	rm -f $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$CLUSTER_NAME
 	for file in `ls $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME`
 	do
-	 	IMAGE_ID=$(docker build -t $CLUSTERNAME/$file $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file 2>/dev/null | awk '/Successfully built/{print $NF}')		
+		mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp
+		mv $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp/Dockerfile
+#	        IMAGE_ID=$(docker build -t ./$CLUSTER_NAME $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp 2>/dev/null | awk '/Successfully built/{print $NF}')		
+		docker build -t $CLUSTER_NAME:$file "$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp" 
+
+		IMAGE_ID=$(docker images | grep $CLUSTER_NAME |grep -v latest | grep $file | awk -F ' ' '{print $3 }')
 		echo "$file .......Docker image ID: $IMAGE_ID ..... [ DONE ]"
-		#docker run -d -it --hostname $file --privileged $IMAGE_ID
+		docker run -d -it --hostname $file --privileged $IMAGE_ID
 
 	done;
 	echo "Launch Complete !! Please run below command on your docker images. once logging in"
@@ -185,10 +191,10 @@ build_docker_file()
 
 	# Doing small validation on cluster requirement before building the file, Checks if CLDB > 0  and Less than the number of nodes
 
-	if [ $cldbs -gt 0 ] && [ $cldbs -lt $nodes ] ;
+	if [ $cldbs -gt 0 ] && [ $cldbs -le $nodes ] ;
 	then
 		#CLDB count seems to be good ! Lets check zk count
-		if [ $zks -gt 0 ] && [ $zks -lt $nodes ];
+		if [ $zks -gt 0 ] && [ $zks -le $nodes ];
 		then
 			echo "Zookeeper count is good !"
 		else

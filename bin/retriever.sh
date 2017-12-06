@@ -159,10 +159,15 @@ execute_docker_files()
 	rm -f $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$CLUSTER_NAME
 	for file in `ls $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME`
 	do
+		# Making directory for placing the docker files for each node
+
 		mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp
 		mv $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp/Dockerfile
-#	        IMAGE_ID=$(docker build -t ./$CLUSTER_NAME $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp 2>/dev/null | awk '/Successfully built/{print $NF}')		
+		# Building docker file under cluster name as a tag
+
 		docker build -t $CLUSTER_NAME:$file "$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp" 
+
+		# Getting Image ID and starting docker image
 
 		IMAGE_ID=$(docker images | grep $CLUSTER_NAME |grep -v latest | grep $file | awk -F ' ' '{print $3 }')
 		echo "$file .......Docker image ID: $IMAGE_ID ..... [ DONE ]"

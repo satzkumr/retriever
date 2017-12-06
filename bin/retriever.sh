@@ -15,6 +15,11 @@ source $RETRIEVER_HOME/inputs/docker_conf.sh
 
 outfile=$RETRIEVER_HOME/dockerfiles/$CLUSTER_NAME
 
+
+# Other Global vars for this code
+CLDB_HOSTNAMES=""
+ZK_HOSTNAMES=""
+
 #Funciton implementations goes here!
 
 #Utility function that generates hostnames for your cluster from the hoststring provided
@@ -31,7 +36,7 @@ create_host_names()
 		domain=`echo $1 | awk -F '.' '{print $2 "." $3}'`
 		newhost="$nodename$i.$domain"
 		hosts[$i]="$newhost"
-		echo $nodename$i.$domain
+		#echo $nodename$i.$domain
 		i=$((i+1))
 	done;
 }
@@ -56,6 +61,7 @@ create_base_dockerfile()
 	echo "RUN find . -type d ! -name "$1" | xargs rm -rf " >> $outfile
 	echo "RUN cp /tmp/setup/MapRRepoFiles/$1/* /etc/yum.repos.d/" >> $outfile
 	echo "RUN yum install mapr-core mapr-fileserver" >> $outfile
+	echo "Creating Base docker file............................[DONE]"
 }
 
 
@@ -67,49 +73,101 @@ add_cluster_roles()
 
 	mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	cp $outfile $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
+	echo "Building template for nodes.."
 	i=1;
 	while [ $i -le $NODE_COUNT ];
 	do
-		echo "Building template for ..Node: ${hosts[$i]}"
+		echo "${hosts[$i]}  ...... [ DONE ]"
 		cp $outfile $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/${hosts[$i]}
 		clustertempdir=$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 		i=$((i+1))
 	done;
 
 		# Adding CLDB Roles to cluster template
+		echo "-------------------------------------------------------------------------"
+		echo "Adding CLDB Roles"
+		echo "-------------------------------------------------------------------------"	
 		for (( i=1; i<=$NO_OF_CLDBS; i++ ))
 		do
 	 		#Adding CLDB role to node
-			echo "Adding CLDB Role to Host: ${hosts[$i]}"
 			echo "RUN yum install mapr-cldb -y" >> $clustertempdir/${hosts[$i]}			
+			CLDB_HOSTNAMES="${CLDB_HOSTNAMES} ${hosts[$i]}"
 		done;
-	
+		echo "CLDB roles added to Hosts: $CLDB_HOSTNAMES .........[DONE]"
+
 		#Adding Zookeeper role to cluster nodes
+
+		echo "-------------------------------------------------------------------------"
+                echo "Adding Zookeeper Roles"
+                echo "-------------------------------------------------------------------------"   
 
 		for (( i=1; i<=$NO_OF_ZKS; i++))
                 do
                         #Adding Zookeeper role to nodes
-                        echo "Adding Zookeeper Role to Host: ${hosts[$i]}"
                         echo "RUN yum install mapr-zookeeper -y" >> $clustertempdir/${hosts[$i]}
+			ZK_HOSTNAMES="${ZK_HOSTNAMES} ${hosts[$i]}"
                 done;
-		
+		echo "Zookeeper roles added to Hosts: $ZK_HOSTNAMES .........[DONE]"
+
 		#Adding Resourcemanager role to cluster nodes
+		echo "-------------------------------------------------------------------------"
+                echo "Adding Resourcemanager Roles"
+                echo "-------------------------------------------------------------------------"   
 		for (( i=1; i<=$NO_OF_RMS; i++))
                 do
                         #Adding Resourcemanager role to nodes
-                        echo "Adding Resource Manager Role to Host: ${hosts[$i]}"
                         echo "RUN yum install mapr-resourcemanager -y" >> $clustertempdir/${hosts[$i]}
                 done;
+		echo "Resource manager roles added to Hosts...............[DONE]"
 		
 		#Adding Nodemanager role to cluster nodes, By default all the nodes installed with NM Role
+
+		echo "-------------------------------------------------------------------------"
+                echo "Adding Node manager Roles"
+                echo "-------------------------------------------------------------------------"  
                 for (( i=1; i<=$NODE_COUNT; i++))
                 do
                         #Adding Nodemanager role to nodes
-                        echo "Adding Node Manager Role to Host: ${hosts[$i]}"
                         echo "RUN yum install mapr-nodemanager -y" >> $clustertempdir/${hosts[$i]}
-                done;
+                done;	
+		echo "Node manager roles added to all hosts...............[DONE]"	
+
+		#Adding other roles mentioned in requirement
+		for role in $NODE_COMPONENTS
+		do
+			if [ $role == drill ];
+			then
+				for (( i=1; i<$NO_OF_DRILL;i++))
+				do
+				echo "RUN yum install mapr-drillbits -y" >> $clustertempdir/${hosts[$i]}
+				done;
+			fi
+		done;
+		#To be done for other roles as well
 }
 
+#Function that runs your docker files and build the cluster
+#Arguments: None
+
+execute_docker_files()
+{
+	echo "----------------------------------------------------------------"
+	echo "Preparing to execute your docker files.."
+	echo "----------------------------------------------------------------"
+	echo "Retriving files from your cluster template directory..for cluster $CLUSTERNAME"
+	rm -f $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$CLUSTER_NAME
+	for file in `ls $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME`
+	do
+	 	IMAGE_ID=$(docker build -t $CLUSTERNAME/$file $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file 2>/dev/null | awk '/Successfully built/{print $NF}')		
+		echo "$file .......Docker image ID: $IMAGE_ID ..... [ DONE ]"
+		#docker run -d -it --hostname $file --privileged $IMAGE_ID
+
+	done;
+	echo "Launch Complete !! Please run below command on your docker images. once logging in"
+	echo "----------------------------------------------------------------" 
+	echo "/opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F <disks file>"
+	echo "----------------------------------------------------------------" 
+}
 
 #Main function which calls sub functions
 #Arguments: NO_OF_NODES,$NO_OF_CLDBS,$NO_OF_ZKS,$NO_OF_RMS,$NODE_HOSTS, Version of mapr cluster
@@ -125,15 +183,14 @@ build_docker_file()
 	#calling utility function to generate hostnames"
 	create_host_names $hostnames $nodes
 
-	create_base_dockerfile $version 
+	# Doing small validation on cluster requirement before building the file, Checks if CLDB > 0  and Less than the number of nodes
 
 	if [ $cldbs -gt 0 ] && [ $cldbs -lt $nodes ] ;
 	then
-		cat $outfile > "$outfile.masternodes"
-		echo "RUN yum install mapr-cldb -y" >> "$outfile.masternodes"
+		#CLDB count seems to be good ! Lets check zk count
 		if [ $zks -gt 0 ] && [ $zks -lt $nodes ];
 		then
-			echo "RUN yum install mapr-zookeeper -y" >> "$outfile.masternodes"
+			echo "Zookeeper count is good !"
 		else
 			echo "Invalid zookeeper count..Make sure you have given correct number of nodes or count in odd numbers..Exitting" 
 			exit 1;
@@ -142,8 +199,12 @@ build_docker_file()
 		echo "Invalid CLDB count...Make sure you have given atleast 1 cldb and not greater than nodes in cluster...Exitting"
 		exit 1;
 	fi
+	
+	create_base_dockerfile $version 
 
 	add_cluster_roles $NODE_COMPONENTS
+
+	execute_docker_files
 }
 
 

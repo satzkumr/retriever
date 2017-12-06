@@ -21,7 +21,7 @@ NODE_HOSTS="myhost.cluster.com"
 
 #Number of CLDB nodes
 
-NO_OF_CLDBS=1
+NO_OF_CLDBS=2
 
 #Number of Zookeepers
 
@@ -33,4 +33,6 @@ NO_OF_RMS=2
 
 #Other components
 
-NODE_COMPONENTS="fileserver,drill,nodemanager"
+NODE_COMPONENTS="drill"
+
+NO_OF_DRILL=1

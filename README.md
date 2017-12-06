@@ -4,7 +4,11 @@ Project for building MapR clusters on Docker
 Goal of this project to automate the MapR cluster deployments
 Simply anyone can launch MapR clusters in minutes on a Docker environments
 
+
+
 Step 1:
+
+
 	a) Create your requirement file, Dont worry ! just edit the file under "inputs" directory
 	Example: 
 		i) tell your cluster name

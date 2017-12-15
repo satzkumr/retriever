@@ -6,15 +6,20 @@
 #
 #######################################################################
 
-RETRIEVER_HOME=/home/mapr/myProjects/retriever/
+RETRIEVER_HOME=/root/retriever
 
 #sourcing input file
 
 source $RETRIEVER_HOME/inputs/requirement.sh
 source $RETRIEVER_HOME/inputs/docker_conf.sh
 
+#NFS Server Mount path - It is not used right now!
+NFS_SERVER="10.10.71.23"
+
 outfile=$RETRIEVER_HOME/dockerfiles/$CLUSTER_NAME
 
+#Path where your MapR-FS disk images are strored
+DISKS_FILEPATH=/tmp/nfsmount/My52Cluster_72/tmp
 
 # Other Global vars for this code
 CLDB_HOSTNAMES=""
@@ -58,9 +63,15 @@ create_base_dockerfile()
 	echo "RUN yum install java-1.7.0-openjdk.x86_64 -y " >>$outfile
 	echo "RUN yum install *jdk-devel* -y" >> $outfile
 	echo "WORKDIR /tmp/setup/MapRRepoFiles" >> $outfile
-	#echo "RUN find . -type d ! -name "$1" | xargs rm -rf " >> $outfile
+	echo "RUN cp /tmp/setup/MapRRepoFiles/startscript /usr/sbin" >> $outfile
+	echo "RUN chmod +x /usr/sbin/startscript" >> $outfile
 	echo "RUN cp /tmp/setup/MapRRepoFiles/$1/* /etc/yum.repos.d/" >> $outfile
+
+	#Creating mount point for storing your MapR-FS disk images
+	echo "RUN mkdir /tmp/nfsmount" >> $outfile
+	echo "RUN yum install nfs-utils -y" >> $outfile
 	echo "RUN yum install mapr-core mapr-fileserver -y" >> $outfile
+	#echo "ENTRYPOINT "/usr/sbin/startscript" " >> $outfile
 	echo "Creating Base docker file............................[DONE]"
 }
 
@@ -75,6 +86,7 @@ add_cluster_roles()
 	mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	cp $outfile $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	echo "Building template for nodes.."
+
 	i=1;
 	while [ $i -le $NODE_COUNT ];
 	do
@@ -83,7 +95,21 @@ add_cluster_roles()
 		clustertempdir=$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 		i=$((i+1))
 	done;
+	
+ 	i=1;	
 
+	#Create disks file for each node, This would be used along with configure.sh -F
+	clustertempdir=$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
+
+	echo "Pre-creating Disk list file for each node... By defult 1 Disk for each node"
+	while [ $i -le $NODE_COUNT ];
+	do
+		echo "Disk created for ${hosts[$i]}"
+		#Writing disk list file
+		echo "RUN echo $DISK_FILEPATH/${hosts[$i]} >> /tmp/disk"
+		i=$((i+1))
+
+	done;
 		# Adding CLDB Roles to cluster template
 		echo "-------------------------------------------------------------------------"
 		echo "Adding CLDB Roles"
@@ -147,6 +173,7 @@ add_cluster_roles()
 		#To be done for other roles as well
 }
 
+
 #Function that runs your docker files and build the cluster
 #Arguments: None
 
@@ -159,25 +186,25 @@ execute_docker_files()
 	rm -f $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$CLUSTER_NAME
 	for file in `ls $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME`
 	do
-		# Making directory for placing the docker files for each node
-
 		mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp
 		mv $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp/Dockerfile
-		# Building docker file under cluster name as a tag
 
+		#Building Images
 		docker build -t $CLUSTER_NAME:$file "$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp" 
-
-		# Getting Image ID and starting docker image
-
+		
+		#Getting Image name before starting one by one
 		IMAGE_ID=$(docker images | grep $CLUSTER_NAME |grep -v latest | grep $file | awk -F ' ' '{print $3 }')
 		echo "$file .......Docker image ID: $IMAGE_ID ..... [ DONE ]"
 		docker run -d -it --hostname $file --privileged $IMAGE_ID
 
 	done;
-	echo "Launch Complete !! Please run below command on your docker images. once logging in"
-	echo "----------------------------------------------------------------" 
-	echo "/opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F <disks file>"
-	echo "----------------------------------------------------------------" 
+
+	echo "Launch Complete !! Please run below commands on your docker images. once logging in"
+	echo "-----------------------------------------------------------------------------------" 
+	echo "1. Run /usr/sbin/startscript "
+	echo "2. Check the /etc/hosts"
+	echo "3. /opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disk"
+	echo "-----------------------------------------------------------------------------------" 
 }
 
 #Main function which calls sub functions
@@ -236,6 +263,7 @@ fi
 echo "----------------------------------------------------------------------------------------------------"
 echo "Number of node: $NODE_COUNT , CLDBS: $NO_OF_CLDBS , Zookeepers: $NO_OF_ZKS , Resource Managers: $NO_OF_RMS , HOSTNAME parts : $NODE_HOSTS Cluster Version: $CLUSTER_VERSION"
 echo "----------------------------------------------------------------------------------------------------"
+
 #Calling main function to build docker file
 
 build_docker_file $NODE_COUNT $NO_OF_CLDBS $NO_OF_ZKS $NO_OF_RMS $NODE_HOSTS $CLUSTER_VERSION

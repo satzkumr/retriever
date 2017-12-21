@@ -6,7 +6,7 @@
 #
 #######################################################################
 
-RETRIEVER_HOME=/root/retriever
+RETRIEVER_HOME=/home/mapr/myProjects
 
 #sourcing input file
 
@@ -62,6 +62,8 @@ create_base_dockerfile()
 	echo "RUN yum clean all" >> $outfile
 	echo "RUN yum install java-1.7.0-openjdk.x86_64 -y " >>$outfile
 	echo "RUN yum install *jdk-devel* -y" >> $outfile
+	#Adding Utilities 
+	#echo "RUN yum install lsof openssh-server" 
 	echo "WORKDIR /tmp/setup/MapRRepoFiles" >> $outfile
 	echo "RUN cp /tmp/setup/MapRRepoFiles/startscript /usr/sbin" >> $outfile
 	echo "RUN chmod +x /usr/sbin/startscript" >> $outfile
@@ -166,7 +168,7 @@ add_cluster_roles()
 			then
 				for (( i=1; i<$NO_OF_DRILL;i++))
 				do
-				echo "RUN yum install mapr-drillbits -y"
+				 echo "RUN yum install mapr-drillbits -y >> $clustertempdir/${hosts[$i]}"
 				done;
 			fi
 		done;

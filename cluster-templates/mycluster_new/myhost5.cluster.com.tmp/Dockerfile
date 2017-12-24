@@ -14,3 +14,4 @@ RUN cp /tmp/setup/MapRRepoFiles/5.1/* /etc/yum.repos.d/
 RUN mkdir /tmp/nfsmount
 RUN yum install nfs-utils -y
 RUN yum install mapr-core mapr-fileserver -y
+RUN yum install mapr-nodemanager -y

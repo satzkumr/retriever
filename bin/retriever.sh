@@ -6,27 +6,35 @@
 #
 #######################################################################
 
-RETRIEVER_HOME=/home/mapr/myProjects
+RETRIEVER_HOME=/home/mapr/myProjects/retriever
 
 #sourcing input file
 
 source $RETRIEVER_HOME/inputs/requirement.sh
 source $RETRIEVER_HOME/inputs/docker_conf.sh
 
-#NFS Server Mount path - It is not used right now!
+############################ Configurations #################################
+
+#NFS server where your disk files get stored
 NFS_SERVER="10.10.71.23"
 
+#Bookeepker locations where all cluster information logged
+BOOK_KEEPER=/mapr/My52Cluster_72/tmp/cluster_register
+
+#Where your intermediate files go
 outfile=$RETRIEVER_HOME/dockerfiles/$CLUSTER_NAME
 
 #Path where your MapR-FS disk images are strored
 DISKS_FILEPATH=/tmp/nfsmount/My52Cluster_72/tmp
+
+########################### Configuration Ends here! #########################
+
 
 # Other Global vars for this code
 CLDB_HOSTNAMES=""
 ZK_HOSTNAMES=""
 
 #Funciton implementations goes here!
-
 #Utility function that generates hostnames for your cluster from the hoststring provided
 #Arguments: hoststring, number of nodes
 
@@ -62,8 +70,9 @@ create_base_dockerfile()
 	echo "RUN yum clean all" >> $outfile
 	echo "RUN yum install java-1.7.0-openjdk.x86_64 -y " >>$outfile
 	echo "RUN yum install *jdk-devel* -y" >> $outfile
+
 	#Adding Utilities 
-	#echo "RUN yum install lsof openssh-server" 
+	echo "RUN yum install lsof openssh-server" 
 	echo "WORKDIR /tmp/setup/MapRRepoFiles" >> $outfile
 	echo "RUN cp /tmp/setup/MapRRepoFiles/startscript /usr/sbin" >> $outfile
 	echo "RUN chmod +x /usr/sbin/startscript" >> $outfile
@@ -73,7 +82,6 @@ create_base_dockerfile()
 	echo "RUN mkdir /tmp/nfsmount" >> $outfile
 	echo "RUN yum install nfs-utils -y" >> $outfile
 	echo "RUN yum install mapr-core mapr-fileserver -y" >> $outfile
-	#echo "ENTRYPOINT "/usr/sbin/startscript" " >> $outfile
 	echo "Creating Base docker file............................[DONE]"
 }
 
@@ -83,7 +91,7 @@ create_base_dockerfile()
 
 add_cluster_roles()
 {
-
+	#Removing the older cluster template if any, But this should not be the case
 	rm -rf $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	cp $outfile $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
@@ -100,19 +108,9 @@ add_cluster_roles()
 	
  	i=1;	
 
-	#Create disks file for each node, This would be used along with configure.sh -F
 	clustertempdir=$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
-
-	echo "Pre-creating Disk list file for each node... By defult 1 Disk for each node"
-	while [ $i -le $NODE_COUNT ];
-	do
-		echo "Disk created for ${hosts[$i]}"
-		#Writing disk list file
-		echo "RUN echo $DISK_FILEPATH/${hosts[$i]} >> /tmp/disk"
-		i=$((i+1))
-
-	done;
-		# Adding CLDB Roles to cluster template
+		
+	# Adding CLDB Roles to cluster template
 		echo "-------------------------------------------------------------------------"
 		echo "Adding CLDB Roles"
 		echo "-------------------------------------------------------------------------"	
@@ -124,7 +122,7 @@ add_cluster_roles()
 		done;
 		echo "CLDB roles added to Hosts: $CLDB_HOSTNAMES .........[DONE]"
 
-		#Adding Zookeeper role to cluster nodes
+	#Adding Zookeeper role to cluster nodes
 
 		echo "-------------------------------------------------------------------------"
                 echo "Adding Zookeeper Roles"
@@ -138,7 +136,7 @@ add_cluster_roles()
                 done;
 		echo "Zookeeper roles added to Hosts: $ZK_HOSTNAMES .........[DONE]"
 
-		#Adding Resourcemanager role to cluster nodes
+	#Adding Resourcemanager role to cluster nodes
 		echo "-------------------------------------------------------------------------"
                 echo "Adding Resourcemanager Roles"
                 echo "-------------------------------------------------------------------------"   
@@ -149,7 +147,7 @@ add_cluster_roles()
                 done;
 		echo "Resource manager roles added to Hosts...............[DONE]"
 		
-		#Adding Nodemanager role to cluster nodes, By default all the nodes installed with NM Role
+	#Adding Nodemanager role to cluster nodes, By default all the nodes installed with NM Role
 
 		echo "-------------------------------------------------------------------------"
                 echo "Adding Node manager Roles"
@@ -161,7 +159,8 @@ add_cluster_roles()
                 done;	
 		echo "Node manager roles added to all hosts...............[DONE]"	
 
-		#Adding other roles mentioned in requirement
+	#Adding other roles mentioned in requirement
+
 		for role in $NODE_COMPONENTS
 		do
 			if [ $role == drill ];
@@ -173,6 +172,14 @@ add_cluster_roles()
 			fi
 		done;
 		#To be done for other roles as well
+	
+	#Passing cluster name to startsript to prepare the disk storage 
+
+	# This is the startup point for the cluster where the disks are created and mounted
+	for (( i=1; i<=$NODE_COUNT; i++))
+        do
+       echo "ENTRYPOINT "/usr/sbin/startscript $CLUSTER_NAME $NFS_SERVER $DISKS_FILEPATH $DISKS_PER_NODE" " >> $clustertempdir/${hosts[$i]}
+	done;
 }
 
 
@@ -197,15 +204,19 @@ execute_docker_files()
 		#Getting Image name before starting one by one
 		IMAGE_ID=$(docker images | grep $CLUSTER_NAME |grep -v latest | grep $file | awk -F ' ' '{print $3 }')
 		echo "$file .......Docker image ID: $IMAGE_ID ..... [ DONE ]"
-		docker run -d -it --hostname $file --privileged $IMAGE_ID
+		echo "$CLUSTER_NAME.$file"
+		docker run -d -it --name --hostname $file --privileged $IMAGE_ID 
 
 	done;
 
 	echo "Launch Complete !! Please run below commands on your docker images. once logging in"
+	echo "Adding entry to cluster book keeper" 
+
+	echo "$CLUSTER_NAME | $CLUSTER_VERSION | $NODE_COUNT  | $NODE_COMPONENTS " >> $BOOK_KEEPER 
+	echo "-------------------------------------------------------------------------------------" >> $BOOK_KEEPER
+	
 	echo "-----------------------------------------------------------------------------------" 
-	echo "1. Run /usr/sbin/startscript "
-	echo "2. Check the /etc/hosts"
-	echo "3. /opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disk"
+	echo "/opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disk --create-user"
 	echo "-----------------------------------------------------------------------------------" 
 }
 
@@ -228,7 +239,7 @@ build_docker_file()
 	if [ $cldbs -gt 0 ] && [ $cldbs -le $nodes ] ;
 	then
 		#CLDB count seems to be good ! Lets check zk count
-		if [ $zks -gt 0 ] && [ $zks -le $nodes ];
+		if [ $zks -gt 0 ] && [ $zks -le $nodes ] && [ $(( $zks % 2 )) -ne 0 ] ;
 		then
 			echo "Zookeeper count is good !"
 		else
@@ -261,6 +272,18 @@ else
 	echo "Input file not present ! Something is not right"
 	exit 1;
 fi
+
+echo "Checking in cluster bookeeper for existing cluster names"
+# Just to avod accidental overwrites of cluster
+
+ grep -i -w $CLUSTER_NAME $BOOK_KEEPER
+ 
+ if [ $? -ne 0 ] ;then
+	echo " Cluster name not present..Good to go !"
+ else
+	echo "Cluster name already present... ! Exitting"
+ 	exit 1;
+ fi
 
 echo "----------------------------------------------------------------------------------------------------"
 echo "Number of node: $NODE_COUNT , CLDBS: $NO_OF_CLDBS , Zookeepers: $NO_OF_ZKS , Resource Managers: $NO_OF_RMS , HOSTNAME parts : $NODE_HOSTS Cluster Version: $CLUSTER_VERSION"

@@ -6,7 +6,7 @@
 #
 #######################################################################
 
-RETRIEVER_HOME=/home/mapr/myProjects/retriever
+RETRIEVER_HOME=/root/retriever
 
 #sourcing input file
 
@@ -193,6 +193,10 @@ execute_docker_files()
 	echo "----------------------------------------------------------------"
 	echo "Retriving files from your cluster template directory..for cluster $CLUSTERNAME"
 	rm -f $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$CLUSTER_NAME
+	
+	# Emptying container ID file which holds the list of containers for this cluster
+	> /tmp/${CLUSTER_NAME}_containerid
+
 	for file in `ls $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME`
 	do
 		mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME/$file.tmp
@@ -204,21 +208,78 @@ execute_docker_files()
 		#Getting Image name before starting one by one
 		IMAGE_ID=$(docker images | grep $CLUSTER_NAME |grep -v latest | grep $file | awk -F ' ' '{print $3 }')
 		echo "$file .......Docker image ID: $IMAGE_ID ..... [ DONE ]"
-		echo "$CLUSTER_NAME.$file"
-		docker run -d -it --name --hostname $file --privileged $IMAGE_ID 
+		docker run -d -it --name $CLUSTER_NAME.$file --hostname $file --privileged $IMAGE_ID >> /tmp/${CLUSTER_NAME}_containerid 
 
 	done;
+	generate_hosts_file
 
-	echo "Launch Complete !! Please run below commands on your docker images. once logging in"
 	echo "Adding entry to cluster book keeper" 
-
 	echo "$CLUSTER_NAME | $CLUSTER_VERSION | $NODE_COUNT  | $NODE_COMPONENTS " >> $BOOK_KEEPER 
 	echo "-------------------------------------------------------------------------------------" >> $BOOK_KEEPER
 	
 	echo "-----------------------------------------------------------------------------------" 
-	echo "/opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disk --create-user"
+	echo " Your Cluster is ready !!! here are the details"
+	echo " Command used to configure : "/opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disk --create-user""
+	echo " Please run : "docker exec -it `head -n 1 /tmp/${CLUSTER_NAME}_containerid | cut -c1-13` /usr/bin/maprcli node list -columns csvc" After few seconds to get the cluster details"
 	echo "-----------------------------------------------------------------------------------" 
 }
+
+
+# Function for Generating the hosts file for the conatiners for cluster
+# Arguments: None
+
+generate_hosts_file()
+{
+	# file with all docker container IDs related to this cluster
+        idfile=/tmp/${CLUSTER_NAME}_containerid
+
+        echo -e "127.0.0.1       localhost \n::1     localhost ip6-localhost ip6-loopback" > /tmp/${CLUSTER_NAME}_hosts
+
+        if [ ! -f $idfile ]; then
+            echo "ContainerId file $idfile not found! docker run did not run properly exiting"
+            exit 1
+        fi
+
+        if [ ! -s $idfile ]; then
+                echo " Container IDs are not present in the file .. Exitting"
+                exit 1
+        fi
+
+	file_content=`cat $idfile`
+        echo "Genrating the hosts file from docker inspect " 
+
+	# for All container IDs get the IP addresses and hostnames
+        for node in $file_content
+        do
+
+                data=` docker inspect $node |grep -E  "Hostname\"|IPAddress\"|\"HostsPath\""|column -t  |uniq |tr -d \",\,,:|awk '{print $2}'|tr '\n' ':' |cut -d '%' -f1  |tr : " "`
+        echo $data|cut -d " " -f2,3|awk '{print $2" "$1}' >> /tmp/${CLUSTER_NAME}_hosts
+
+                hostfile_tmp=`echo $data|cut -d " " -f1`
+		hostfile=`echo $hostfile $hostfile_tmp` 
+        done
+
+	# Copying Generated hosts file to container's /etc/hosts
+
+        for location in $hostfile
+        do
+                if [ ! -z "$location" ];then
+                        echo Copying the hosts file to the hosts file
+                        /bin/cp -f  /tmp/${CLUSTER_NAME}_hosts  $location
+                fi
+        done
+
+	# Wait for 10 seconds and run configure.sh on each of the containers       
+	sleep 10s 
+	for node in $file_content
+        do
+		echo "running Configure.sh  for" $node
+               docker exec -it  $node /opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disks --create-user
+		
+	done 
+
+}
+
 
 #Main function which calls sub functions
 #Arguments: NO_OF_NODES,$NO_OF_CLDBS,$NO_OF_ZKS,$NO_OF_RMS,$NODE_HOSTS, Version of mapr cluster

@@ -6,7 +6,7 @@
 #
 #######################################################################
 
-RETRIEVER_HOME=/home/mapr/myProjects/retriever
+RETRIEVER_HOME=/root/retriever
 
 #sourcing input file
 
@@ -205,10 +205,10 @@ execute_docker_files()
 		IMAGE_ID=$(docker images | grep $CLUSTER_NAME |grep -v latest | grep $file | awk -F ' ' '{print $3 }')
 		echo "$file .......Docker image ID: $IMAGE_ID ..... [ DONE ]"
 		echo "$CLUSTER_NAME.$file"
-		docker run -d -it --name --hostname $file --privileged $IMAGE_ID 
+		docker run -d -it --name $CLUSTER_NAME.$file --hostname $file --privileged $IMAGE_ID >> /tmp/${CLUSTER_NAME}_containerid 
 
 	done;
-
+	generate_hosts_file
 	echo "Launch Complete !! Please run below commands on your docker images. once logging in"
 	echo "Adding entry to cluster book keeper" 
 
@@ -218,6 +218,51 @@ execute_docker_files()
 	echo "-----------------------------------------------------------------------------------" 
 	echo "/opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disk --create-user"
 	echo "-----------------------------------------------------------------------------------" 
+}
+
+#Generating the hosts file for the conatiners for cluster
+generate_hosts_file()
+{
+        idfile=/tmp/${CLUSTER_NAME}_containerid
+        echo -e "127.0.0.1       localhost \n::1     localhost ip6-localhost ip6-loopback" > /tmp/${CLUSTER_NAME}_hosts
+        if [ ! -f $idfile ]; then
+            echo "ContainerId file $idfile not found! docker run did not run properly exiting"
+            exit
+        fi
+        if [ ! -s $idfile ]; then
+                echo "Empty file"
+                exit
+        fi
+	file_content=`cat $idfile`
+
+        echo Genrating the hosts file from docker inspect
+        for node in $file_content
+        do
+
+                data=` docker inspect $node |grep -E  "Hostname\"|IPAddress\"|\"HostsPath\""|column -t  |uniq |tr -d \",\,,:|awk '{print $2}'|tr '\n' ':' |cut -d '%' -f1  |tr : " "`
+        echo $data|cut -d " " -f2,3|awk '{print $2" "$1}' >> /tmp/${CLUSTER_NAME}_hosts
+
+                hostfile_tmp=`echo $data|cut -d " " -f1`
+		hostfile=`echo $hostfile $hostfile_tmp` 
+        done
+
+        for location in $hostfile
+        do
+                if [ ! -z "$location" ];then
+                        echo Copying the hosts file to the hosts file
+                        /bin/cp -f  /tmp/${CLUSTER_NAME}_hosts  $location
+                fi
+        done
+       
+	sleep 10s 
+	for node in $file_content
+        do
+		echo "running Configure.sh  for" $node
+               docker exec -it  $node /opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disks --create-user
+		
+	done 
+	>/tmp/${CLUSTER_NAME}_containerid
+
 }
 
 #Main function which calls sub functions

@@ -91,7 +91,6 @@ create_base_dockerfile()
 
 add_cluster_roles()
 {	
-	webcount=0
 	#Removing the older cluster template if any, But this should not be the case
 	rm -rf $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
@@ -175,12 +174,15 @@ add_cluster_roles()
 				done;
 			fi
 		done;
-		#To be done for other roles as well
-	
-		echo "RUN yum install mapr-webserver -y" >> $clustertempdir/${hosts[$NODE_COUNT]}
-	#Passing cluster name to startsript to prepare the disk storage 
 
+ 	#Adding webserver on the last node of cluster	
+		echo "RUN yum install mapr-webserver -y" >> $clustertempdir/${hosts[$NODE_COUNT]}
+
+	#Other roles will be added here!
+
+	#Passing cluster name to startsript to prepare the disk storage 
 	# This is the startup point for the cluster where the disks are created and mounted
+
 	for (( i=1; i<=$NODE_COUNT; i++))
         do
        echo "ENTRYPOINT "/usr/sbin/startscript $CLUSTER_NAME $NFS_SERVER $DISKS_FILEPATH $DISKS_PER_NODE" " >> $clustertempdir/${hosts[$i]}
@@ -225,8 +227,9 @@ execute_docker_files()
 	
 	echo "-----------------------------------------------------------------------------------" 
 	echo " Your Cluster is ready !!! here are the details"
-	echo " Command used to configure : "/opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disk --create-user""
+	echo " Command used to configure : "/opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disks""
 	echo " Please run : "docker exec -it `head -n 1 /tmp/${CLUSTER_NAME}_containerid | cut -c1-13` /usr/bin/maprcli node list -columns csvc" After few seconds to get the cluster details"
+	echo " username: mapr , passwd: mapr"
 	echo "-----------------------------------------------------------------------------------" 
 }
 
@@ -279,8 +282,8 @@ generate_hosts_file()
 	sleep 10s 
 	for node in $file_content
         do
-		echo "running Configure.sh  for" $node
-               docker exec -it  $node /opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disks --create-user
+		echo "Running Configure.sh  for Node: $node"
+                docker exec -it  $node /opt/mapr/server/configure.sh -N $CLUSTER_NAME -Z $ZK_HOSTNAMES -C $CLDB_HOSTNAMES -F /tmp/disks
 		
 	done 
 

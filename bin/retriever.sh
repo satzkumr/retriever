@@ -6,7 +6,7 @@
 #
 #######################################################################
 
-RETRIEVER_HOME=/root/retriever
+RETRIEVER_HOME=${PWD}
 
 #sourcing input file
 
@@ -72,7 +72,7 @@ create_base_dockerfile()
 	echo "RUN yum install *jdk-devel* -y" >> $outfile
 
 	#Adding Utilities 
-	echo "RUN yum install lsof openssh-server" 
+	echo "RUN yum install which lsof openssh-server -y" >> $outfile 
 	echo "WORKDIR /tmp/setup/MapRRepoFiles" >> $outfile
 	echo "RUN cp /tmp/setup/MapRRepoFiles/startscript /usr/sbin" >> $outfile
 	echo "RUN chmod +x /usr/sbin/startscript" >> $outfile
@@ -90,7 +90,8 @@ create_base_dockerfile()
 #Arguments: cluster roles
 
 add_cluster_roles()
-{
+{	
+	webcount=0
 	#Removing the older cluster template if any, But this should not be the case
 	rm -rf $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 	mkdir -p $RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
@@ -110,6 +111,8 @@ add_cluster_roles()
 
 	clustertempdir=$RETRIEVER_HOME/cluster-templates/$CLUSTER_NAME
 		
+
+		
 	# Adding CLDB Roles to cluster template
 		echo "-------------------------------------------------------------------------"
 		echo "Adding CLDB Roles"
@@ -119,6 +122,7 @@ add_cluster_roles()
 	 		#Adding CLDB role to node
 			echo "RUN yum install mapr-cldb -y" >> $clustertempdir/${hosts[$i]}			
 			CLDB_HOSTNAMES="${CLDB_HOSTNAMES} ${hosts[$i]}"
+
 		done;
 		echo "CLDB roles added to Hosts: $CLDB_HOSTNAMES .........[DONE]"
 
@@ -173,6 +177,7 @@ add_cluster_roles()
 		done;
 		#To be done for other roles as well
 	
+		echo "RUN yum install mapr-webserver -y" >> $clustertempdir/${hosts[$NODE_COUNT]}
 	#Passing cluster name to startsript to prepare the disk storage 
 
 	# This is the startup point for the cluster where the disks are created and mounted
@@ -180,6 +185,7 @@ add_cluster_roles()
         do
        echo "ENTRYPOINT "/usr/sbin/startscript $CLUSTER_NAME $NFS_SERVER $DISKS_FILEPATH $DISKS_PER_NODE" " >> $clustertempdir/${hosts[$i]}
 	done;
+	
 }
 
 
